@@ -4,4 +4,17 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/GameScenes/Main Menu/Main Menu.unity
+    guid: eae6abe7dcb5f438c9bc9f3291c69ca4
+  - enabled: 1
+    path: Assets/GameScenes/overworld/main.unity
+    guid: d3126066fddc5444c8b899a886ca54a2
+  - enabled: 1
+    path: Assets/GameScenes/hurricane/Hurricane.unity
+    guid: e294e1a856e19420eb0830de94f26ca2
+  - enabled: 1
+    path: Assets/GameScenes/flood/flood.unity
+    guid: 66c800c01bcd7f542a7a7b345a5dd3e5
+  m_configObjects: {}

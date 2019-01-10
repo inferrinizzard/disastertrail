@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 698ba8ccf53818541a8da8111bdf6b92, type: 3}
+  m_Name: PropaneTank
+  m_EditorClassIdentifier: 
+  itemPrefab: {fileID: 7106544111022776807, guid: 3efafef1d174a304bb6f554e9a9abe6c,
+    type: 3}
+  icon: {fileID: 0}
+  quantity: 1
+  value: 8
+  displayName: Propane Tank
+  description: Be careful! It might explode...
+  transferable: 0
