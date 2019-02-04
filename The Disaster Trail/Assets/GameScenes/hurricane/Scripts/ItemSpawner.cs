@@ -1,69 +1,119 @@
-﻿using System;
+﻿//using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+
 public class ItemSpawner : MonoBehaviour
 {
-    //Array of room positions sorted by safty 
-    [SerializeField] private PlayerTopDown dangerRooms;
-    [SerializeField] private Transform[] greenDangerRooms;
-    [SerializeField] private Transform[] yellowDangerRooms;
-    [SerializeField] private Transform[] redDangerRooms;
-    private float[] roomWeights = new float[4];
+	[SerializeField] private Transform player;
 
-    //Controlling room weights 
-    [Tooltip("Chance a positive item spawns in a dangerous room")]
-    [SerializeField] [Range(0f, 1f)] private float dangerWeight = .5f;
+    //Dictionaries for faster lookup
+    private Dictionary<Transform, float> roomDict = new Dictionary<Transform, float>();
+    private Dictionary<GameObject, float> itemDict = new Dictionary<GameObject, float>();
+	[SerializeField] private List<Transform> noItemSpawnRooms;
+
+	//Array of items (GameObjects) the player can pick up
+	[SerializeField] private GameObject[] postiveItems;
+    [SerializeField] private GameObject[] negativeItems;
+    [SerializeField] private GameObject[] medKitItems;
+    [SerializeField] private GameObject[] drawers;
+
+    private int numberOfMedicalItemsFound = 0;
+    private int itemSpawned = 0;
+
+    //Rooms that have an item
+    private HashSet<Transform> selectedRooms;
+    private HashSet<GameObject> selectedDrawers;
+
+
+	private PlayerTopDown dangerRooms;
+	private HurricaneGameManager hgm;
+
+	//Controlling room/item weights 
+	[Tooltip("Chance a positive item spawns in a room")]
     [SerializeField] [Range(0f, 1f)] private float greenRoomWeight = .5f;
     [SerializeField] [Range(0f, 1f)] private float yellowRoomWeight = .5f;
     [SerializeField] [Range(0f, 1f)] private float redRoomWeight = .5f;
-
-
-    //Array of items (GameObjects) the player can pick up
-    [SerializeField] private GameObject[] postiveItems;
-    [SerializeField] private GameObject[] negativeItems;
-    [SerializeField] private int numberOfItems;
     [SerializeField] [Range(0f, 1f)] private float positiveItemWeight = .5f;
+
+    [SerializeField] private int numberOfItemsToSpawn;
+    
 
     //Determine how much space around items
     [SerializeField] [Range(0f, 1f)] private float checkRadius = .5f;
 
-    //Rooms that have an item
-    private Transform[] selectedRooms;
-
-    /* TODO:
-     *  Optimize While loop in getRoomPosition
-     *  
-     */
-
     // Use this for initialization
-    void Start()
+
+    private void Awake()
     {
+        Random.InitState(System.DateTime.Now.Millisecond);
 
-        UnityEngine.Random.InitState(DateTime.Now.Millisecond);
+		dangerRooms = player.GetComponent<PlayerTopDown>();
+		hgm = GetComponent<HurricaneGameManager>();
 
-        //initializing green, yellow, and red danger rooms
-        greenDangerRooms = dangerRooms.GetGreenDangerRooms();
-        yellowDangerRooms = dangerRooms.GetYellowDangerRooms();
-        redDangerRooms = dangerRooms.GetRedDangerRooms();
+        //Initializing room dictionary 
+        InitializeDict(roomDict, dangerRooms.GetGreenDangerRooms(), greenRoomWeight);
+        InitializeDict(roomDict, dangerRooms.GetYellowDangerRooms(), yellowRoomWeight);
+        InitializeDict(roomDict, dangerRooms.GetRedDangerRooms(), redRoomWeight);
+
+        //Initializing item dictionary 
+        InitializeDict(itemDict, postiveItems, positiveItemWeight);
+        InitializeDict(itemDict, negativeItems, 1 - positiveItemWeight);
 
         //prevents duplicate rooms
-        selectedRooms = new Transform[numberOfItems];
+        selectedRooms = new HashSet<Transform>();
+        selectedDrawers = new HashSet<GameObject>();
+    }
+
+    void Start()
+    {
+        //remove all specified rooms from the roomDict dictionary
+        ShuffleArray<GameObject>(drawers);
+        ShuffleArray<GameObject>(medKitItems);
+        DistributeItems();
+        //ShuffleMedKitItems();
+
+		roomDict = roomDict.Where(i => !noItemSpawnRooms.Contains(i.Key)).ToDictionary(x => x.Key, x => x.Value);
 
         GameObject item;
         Transform room;
         Vector3 position;
 
-        for (int i = 0; i < numberOfItems; i++)
+        for (int i = 0; i < numberOfItemsToSpawn; i++)
         {
             item = GetRandomItem();
             room = GetRandomRoom();
             position = GetRoomPosition(room);
-            selectedRooms[i] = room;
             GameObject clone = Instantiate(item, position, room.localRotation);
             dangerRooms.hurricanePickups.Add(clone);
         }
+    }
+
+    private void ShuffleArray<T>(T[] array)
+    {
+        int index = 0;
+        for (int i = array.Length - 1; i > 0; i--)
+        {
+            index = Random.Range(0, i + 1);
+            T a = array[index];
+            array[index] = array[i];
+            array[i] = a;
+
+        }
+    }
+
+    private void InitializeDict<TKey, TValue>(Dictionary<TKey, TValue> temp, TKey[] list, TValue value)
+    {
+        foreach (TKey item in list)
+        {
+            temp.Add(item, value);
+        }
+    }
+
+    private TKey RandomKeys<TKey, TValue>(Dictionary<TKey, TValue> dict)
+    {
+		return dict.Keys.ElementAt(Random.Range(0, dict.Count));
     }
 
     #region Random Item Functions
@@ -71,104 +121,44 @@ public class ItemSpawner : MonoBehaviour
     //Calculates total weight of all items and returns an item
     private GameObject GetRandomItem()
     {
-        float weightedSumItems = CalculateWeightedSumItems();
-        float randomWeight = UnityEngine.Random.Range(0, weightedSumItems);
+        float weightedSumItems = itemDict.Sum((item) => item.Value);
+        float randomWeight = Random.Range(0, weightedSumItems);
         float weightSum = 0;
-        int i = 0;
-        int itemType = 0;
+        GameObject ranItem = null;
 
 
         while (weightSum < randomWeight)
         {
-            itemType = UnityEngine.Random.Range(0, 2);
-            weightSum += itemType == 0 ? positiveItemWeight : 1 - positiveItemWeight;
-            i++;
+            ranItem = RandomKeys(itemDict);
+            weightSum += itemDict[ranItem];
         }
 
-        CalaculateWeightedSumRooms(itemType);
-
-        if (itemType == 0)
-        {
-            i = i % postiveItems.Length; 
-            return postiveItems[i];
-        }
-        else
-        {
-            i = i % negativeItems.Length;
-            return negativeItems[i];
-        }
-
+        return ranItem;
     }
 
-    private float CalculateWeightedSumItems()
-    {
-        return (postiveItems.Length * positiveItemWeight) + (negativeItems.Length * (1 - positiveItemWeight));
+	#endregion
 
+	#region Random Room Functions
+
+	//Returns the transfrom of a random room 
+	private Transform GetRandomRoom()
+	{
+		Dictionary<Transform, float> availableRooms = roomDict.Where(i => !selectedRooms.Contains(i.Key)).ToDictionary(x => x.Key, x => x.Value);
+
+		//Uses random number to simulate mixed array
+		float randomWeight = Random.Range(0, availableRooms.Sum((room) => room.Value));
+		float weightSum = 0;
+		Transform ranRoom = null;
+
+		while (weightSum < randomWeight)
+		{
+			ranRoom = RandomKeys(availableRooms);
+			weightSum += availableRooms[ranRoom];
+		}
+
+        selectedRooms.Add(ranRoom);
+        return ranRoom;
     }
-    #endregion
-
-    #region Random Room Functions
-
-    //Returns the transfrom of a random room 
-    private Transform GetRandomRoom()
-    {
-
-        //Uses random number to simulate mixed array
-        float randomWeight = UnityEngine.Random.Range(0, roomWeights[3]);
-        float weightSum = 0;
-        int roomType = 0;
-        int i = 0;
-
-
-        while (weightSum < randomWeight)
-        {
-            roomType = UnityEngine.Random.Range(0, 3); //0 - green, 1 - yellow, 2 - red
-            weightSum += roomType == 0 ? roomWeights[0] : roomType == 1 ? roomWeights[1] : roomWeights[2];
-            i++;
-        }
-
-        return UniqueRoom(roomType, i);
-    }
-
-    //Returns a room that has not been selected
-    private Transform UniqueRoom(int roomType, int i)
-    {
-        Transform[] localArray = roomType == 0 ? greenDangerRooms : roomType == 1 ? yellowDangerRooms : redDangerRooms;
-
-        Transform[] unusedRooms = localArray.Except(selectedRooms).ToArray();
-
-        if (unusedRooms.Length < 1)
-        {
-            Debug.LogWarning("No unique rooms left");
-            return null;
-        }
-
-        return unusedRooms[Mathf.Clamp(i, 0, unusedRooms.Length - 1)];
-    }
-
-    //Calculates room weights wrt itemType
-    private void CalaculateWeightedSumRooms(int itemType)
-    {
-        if (itemType == 0)
-        {
-            roomWeights[0] = greenDangerRooms.Length * greenRoomWeight * dangerWeight;
-            roomWeights[1] = yellowDangerRooms.Length * yellowRoomWeight;
-            roomWeights[2] = redDangerRooms.Length * redRoomWeight;
-
-            roomWeights[3] = roomWeights[0] + roomWeights[1] + roomWeights[2];
-        }
-        else
-        {
-            roomWeights[0] = greenDangerRooms.Length * greenRoomWeight;
-            roomWeights[1] = yellowDangerRooms.Length * yellowRoomWeight * dangerWeight;
-            roomWeights[2] = redDangerRooms.Length * redRoomWeight * dangerWeight;
-
-            roomWeights[3] = roomWeights[0] + roomWeights[1] + roomWeights[2];
-        }
-    }
-
-
-
 
     #endregion
 
@@ -177,21 +167,56 @@ public class ItemSpawner : MonoBehaviour
     //Use selected rooms bounds to return a position to spawn item 
     private Vector3 GetRoomPosition(Transform room)
     {
-        Vector3 position = new Vector3(0,.25f,0);
+        Vector3 position = new Vector3(0, .05f, 0);
         Renderer roomBounds = room.GetComponent<Renderer>();
 
-        position.x = UnityEngine.Random.Range(roomBounds.bounds.min.x, roomBounds.bounds.max.x);
-        position.z = UnityEngine.Random.Range(roomBounds.bounds.min.z, roomBounds.bounds.max.z);
+        position.x = Random.Range(roomBounds.bounds.min.x, roomBounds.bounds.max.x);
+        position.z = Random.Range(roomBounds.bounds.min.z, roomBounds.bounds.max.z);
 
         Collider[] collisionCheck = Physics.OverlapSphere(position, checkRadius);
 
-        while(collisionCheck.Length > 1)
+        while (collisionCheck.Length > 1)
         {
-            position.x = UnityEngine.Random.Range(roomBounds.bounds.min.x, roomBounds.bounds.max.x);
-            position.z = UnityEngine.Random.Range(roomBounds.bounds.min.z, roomBounds.bounds.max.z);
+            position.x = Random.Range(roomBounds.bounds.min.x, roomBounds.bounds.max.x);
+            position.z = Random.Range(roomBounds.bounds.min.z, roomBounds.bounds.max.z);
             collisionCheck = Physics.OverlapSphere(position, checkRadius);
         }
+
         return position;
+    }
+
+    #endregion
+
+    #region Random Drawer Functions
+
+
+
+    private void DistributeItems()
+    {
+        int i = 0;
+
+        while( i < medKitItems.Length)
+        {
+            int index = Random.Range(0, drawers.Length);
+            if (!selectedDrawers.Contains(drawers[index]))
+            {
+                selectedDrawers.Add(drawers[index]);
+                i++;
+            }
+        }
+    }
+
+    public void CheckDrawer(GameObject drawer)
+    {
+        if (selectedDrawers.Contains(drawer))
+        {
+			GameObject obj = medKitItems[numberOfMedicalItemsFound];
+            numberOfMedicalItemsFound++;
+            selectedDrawers.Add(drawer);
+			hgm.HandleObjectPickup(obj);
+            selectedDrawers.Remove(drawer);
+        }
+
     }
 
     #endregion

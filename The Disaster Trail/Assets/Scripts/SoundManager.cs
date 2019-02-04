@@ -5,16 +5,16 @@ using System.Collections;
 public enum BackgroundMusic
 {
     None = -1,
-    OverworldBGM = 0,
-    HurricaneBGM = 1
+    OverworldBGM,
+    HurricaneBGM
 }
 
 // An enum for maintaining the different sound effects available
 public enum SoundEffect
 {
     None = -1,
-    TimeIndicatorChange = 0,
-    GlassBreak = 1
+    TimeIndicatorChange,
+    GlassBreak
 }
 
 // An enum for maintaining the state of playing sound effects and background music
@@ -99,14 +99,10 @@ public class SoundManager : MonoBehaviour
     // Allows other scripts to call functions from SoundManager (part of our singleton pattern).
     public static SoundManager instance = null;
     // The default pitch for any sound in unity
-    public float sfxVolume = .5f;
-    public float minSFXVolume = 0;
-    public float maxSFXVolume = 1;
+    public float sfxVolume = .5f, minSFXVolume = 0, maxSFXVolume = 1;
     protected ArrayList sfxSources;
     public SoundPlayerState sfxState;
-    public float bgmVolume = .5f;
-    public float minBGMVolume = 0;
-    public float maxBGMVolume = 1f;
+    public float bgmVolume = .5f, minBGMVolume = 0, maxBGMVolume = 1f;
     public BackgroundMusic currentBGM;
     // Drag a reference to the audio source which will play the BGM music.
     public AudioSource bgmSource;
@@ -115,8 +111,12 @@ public class SoundManager : MonoBehaviour
     public float lowPitchRange = .95f;
     // The highest a sound effect will be randomly pitched.
     public float highPitchRange = 1.05f;
-    public AudioClip[] bgmClips;
-    public AudioClip[] sfxClips;
+    //Current track playing 
+    public AudioClip currClip;
+    //Current tracks sfx
+    public AudioSource currSFX;
+
+    public AudioClip[] bgmClips, sfxClips;
 
     void Start()
     {
@@ -261,9 +261,13 @@ public class SoundManager : MonoBehaviour
         {
             sfx.Play(delay);
             sfxState = SoundPlayerState.Playing;
+            currClip = clip;
+            currSFX = sfx;
         }
 
+
         // Return a reference to the AudioSource for later use.
+
         return sfx;
     }
 

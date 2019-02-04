@@ -9,6 +9,7 @@ TagManager:
   - PickUp
   - Obstacle
   - BuildingCollider
+  - Puddle
   layers:
   - Default
   - TransparentFX

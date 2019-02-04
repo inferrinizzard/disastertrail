@@ -8,31 +8,57 @@ public class PlayerCar : MonoBehaviour
 	[Header("Car Parts")] [SerializeField] private GameObject carBody;
 	[SerializeField] private List<GameObject> wheels, frontWheelAxes;
 
-	[Header("Movement")] [SerializeField] private float maxSpeed = 80f;
-	[SerializeField] private float rotSpeed = 90f;
+	[Header("Movement")] [SerializeField] private float maxSpeed = 90f;
 	[SerializeField] private float wheelTurnSpeed = 6f;
 	[SerializeField] private float maxReverseSpeed = 25f;
 	[SerializeField] private float spinSpeedMultiplier = 1, turnSpeedMultiplier = 1;
 	[SerializeField] private float accelerateSpeedIncreaseRate;
-	[SerializeField] private float breakSpeedDecreaseRate;
+	[SerializeField] private float brakeSpeedDecreaseRate;
 	[SerializeField] private float idleSpeedDecreaseRate;
 	[SerializeField] private float slowDownAngle = 5f;
 	[SerializeField] private float slowDownMult = .8f;
-	public Vector3 pos, rotAxis, trackPos;
 
-	[Header("UI")] public Image radioMessage;
-	[SerializeField] float randomCounter = 0, radioTime, randomDist = 30, messageTimer = 0;
+	[Header("Camera Movement")] [SerializeField] private float maxCamZoomOut = 1f;
+	[SerializeField] private float maxCamHorizontalTilt = .5f;
+	[SerializeField] private float maxTurnAngle = 2f;
+	[SerializeField] private float camWobbleThreshhold = .7f;
+	[SerializeField] private float camWobbleIntensity = .2f;
 
+	[Header("Hydroplaning")] [SerializeField] private float hydroplaneWobble;
+	[SerializeField] private float hydroplaneSpeedLerpRate;
+	[SerializeField] private float hydroplaneRotationLerpRate;
+	[SerializeField] private float hydroplaneEndSpeed;
+	[SerializeField] private float maxHydroplaneTurnAngle;
+
+	[Header("Sound Effects")]
+	[Tooltip("How fast the car needs to be traveling before a break sound is played.")]
+	[SerializeField] private float screechSpeedThreshold = 25.0f;
+
+	private float speed;
 	private float currentRot;
-	private bool rotating = false, playedMessage = false;
 	private Rigidbody rb;
 	private Renderer rend;
+	private SfxCar sfx;
 	private float priorSpeed;
 	private Vector3 priorDirection;
 	private float speedMultiplier;
 	private float maxTurnSpeed;
+	private bool wasAccelerating; // To determine whether the user started accelerating again.
+	private bool accelerating;
+	private bool braking;
+	private bool hydroplaning;
+	private Vector3 hydroplaneCurrentForward;
+	private float baseCamZoomOut;
+	private float baseCamYPosition;
+	//used for turning on and off Brake lights
+	private bool wasBraking;
+	private IEnumerator brakeEnumerator;
 
-	int health = 3;
+	[Header("Gameplay Options")]
+	public int health = 100;
+
+	[Header("Controls")]
+	[SerializeField] private MobileJoyStick joyStick;
 	float buffer = 0;
 
 	// Use this for initialization
@@ -40,90 +66,102 @@ public class PlayerCar : MonoBehaviour
 	{
 		rb = GetComponent<Rigidbody>();
 		rend = carBody.GetComponent<Renderer>();
+		sfx = GetComponent<SfxCar>();
 		priorSpeed = 0f;
 		priorDirection = transform.forward;
-		radioTime = Random.Range(0f, 1f);
-		trackPos = transform.position;
 		speedMultiplier = 1f;
 		maxTurnSpeed = maxSpeed * .75f;
+		accelerating = false;
+		braking = false;
+		hydroplaning = false;
+		wasBraking = braking;
+		baseCamZoomOut = Camera.main.transform.localPosition.z;
+		baseCamYPosition = Camera.main.transform.localPosition.y;
+
+		sfx.StartEngine();
 	}
 
 	// Update is called once per frame
 	void Update()
 	{
-		if (health < 1)
+		if (health < 0)
 			GameOver();
-
-		pos = transform.position;
-
-		randomCounter = Vector3.Distance(pos, trackPos);
-
-		if (randomCounter / randomDist > radioTime && !playedMessage)
-			RadioMessage();
-
-		if (randomCounter > randomDist && playedMessage)
-		{
-			playedMessage = false;
-			trackPos = pos;
-			randomCounter = 0;
-			radioTime = Random.Range(0f, 1f);
-		}
-
-		if (Time.time - messageTimer > 3)
-			radioMessage.gameObject.SetActive(false);
 	}
 
 	void FixedUpdate()
 	{
-#if UNITY_EDITOR
+#if UNITY_IOS || UNITY_ANDROID
+		float hor = joyStick.Horizontal();
+		float ver = joyStick.Vertical();
+#elif UNITY_STANDALONE
 		float hor = Input.GetAxisRaw("Horizontal");
 		float ver = Input.GetAxisRaw("Vertical");
-#else
-		float hor = MobileJoyStick.Horizontal();
-		float ver = MobileJoyStick.Vertical();
+		accelerating = ver > 0;
+		braking = ver < 0;
 #endif
-		bool accelerating = ver > 0;
-		bool breaking = ver < 0;
-		float speed = CalculateSpeed(hor, accelerating, breaking);
-		float wheelHor = hor;
 
-		rb.AddForce(transform.forward * speed * speedMultiplier);
+		speed = CalculateSpeed(hor, accelerating, braking);
+
+		Vector3 dir = transform.forward;
+
+		if (accelerating && !wasAccelerating)
+		{
+			sfx.Rev();
+		}
+		sfx.Move(rb.velocity.magnitude);
+
+		if (hydroplaning)
+		{
+			speed = Mathf.Lerp(priorSpeed, speed, hydroplaneSpeedLerpRate);
+			dir = Vector3.Lerp(hydroplaneCurrentForward, transform.forward, hydroplaneRotationLerpRate);
+			hydroplaneCurrentForward = dir;
+			dir += new Vector3(dir.z, 0f, -dir.x) * Random.Range(-hydroplaneWobble, hydroplaneWobble) * (1 - Mathf.Abs((.5f - (speed / maxSpeed))));
+		}
+
+		rb.AddForce(dir * speed * speedMultiplier);
 		wheels.ForEach(i => i.transform.Rotate(Vector3.right, Time.fixedDeltaTime * speed * speedMultiplier * spinSpeedMultiplier));
 
-		if (breaking)
+		if (braking && !wasBraking)
 		{
-			StartCoroutine(ToggleBreakLight(true, .2f));
+			// Play a sound effect if the car was moving fast enough.
+			if (Vector3.Dot(rb.velocity, transform.forward) > screechSpeedThreshold)
+				sfx.StartBraking();
+			BrakeLightHandler(true, .2f);
 		}
-		else
+		else if (!braking && wasBraking)
 		{
-			StartCoroutine(ToggleBreakLight(false, .2f));
+			sfx.StopBraking();
+			BrakeLightHandler(false, .2f);
 		}
 
-		if (Mathf.Abs(speed) > 0)
+		if (Mathf.Abs(speed) > 0 && Mathf.Abs(hor) > 0)
 		{
-			if (Mathf.Abs(hor) > 0)
-			{
-				//if the vertical velocity is negative, then the horizontal should be flipped
-				//because the front tires should always be pointing in the dir of the analog stick
-				if (breaking)
-				{
-					wheelHor *= -1f;
-				}
-				if (speed < 0)
-				{
-					hor *= -1f;
-				}
-
-				transform.Rotate(Vector3.up, hor * Mathf.Abs(speed) * turnSpeedMultiplier * Time.fixedDeltaTime);
-			}
+			transform.Rotate(Vector3.up, hor * speed * turnSpeedMultiplier * Time.fixedDeltaTime);
 		}
 
 		// Turn the front wheels left or right during turns based off of the direction of the movement input magnitudes
-		Vector3 move = new Vector3(wheelHor, 0, ver);
-		FrontWheelTurnHandler(move);
+		FrontWheelTurnHandler(new Vector3(hor, 0, Mathf.Abs(ver)));
+
+		AdjustCameraPosition(speed);
+
+
+		priorSpeed = speed;
+		wasBraking = braking;
+		wasAccelerating = accelerating;
 	}
 
-	private IEnumerator ToggleBreakLight(bool on, float duration)
+	private void BrakeLightHandler(bool on, float duration)
+	{
+		if (brakeEnumerator != null)
+		{
+			StopCoroutine(brakeEnumerator);
+		}
+
+		brakeEnumerator = ToggleBrakeLight(on, duration);
+		StartCoroutine(brakeEnumerator);
+	}
+
+	private IEnumerator ToggleBrakeLight(bool on, float duration)
 	{
 		Color to = on ? Color.white : Color.black;
 		Color from = rend.material.GetColor("_BrakesColor");
@@ -141,10 +179,9 @@ public class PlayerCar : MonoBehaviour
 		}
 	}
 
-	
-	private float CalculateSpeed(float hor, bool accelerating, bool breaking)
+	private float CalculateSpeed(float hor, bool accelerating, bool braking)
 	{
-		if (accelerating && breaking)
+		if (accelerating && braking)
 		{
 			return 0f;
 		}
@@ -160,9 +197,9 @@ public class PlayerCar : MonoBehaviour
 			speed += -(turnPenalty * slowDownMult) + (turnPenalty > 0f && speed > maxTurnSpeed ? 0f : increase);
 			speed = Mathf.Clamp(speed, -maxReverseSpeed, maxSpeed);
 		}
-		else if (breaking)
+		else if (braking)
 		{
-			speed -= breakSpeedDecreaseRate;
+			speed -= brakeSpeedDecreaseRate;
 			speed = Mathf.Clamp(speed, -maxReverseSpeed, maxSpeed);
 		}
 		else
@@ -175,11 +212,31 @@ public class PlayerCar : MonoBehaviour
 		}
 
 		priorDirection = transform.forward;
-		priorSpeed = speed;
-
 		return speed;
 	}
-	
+
+	private void AdjustCameraPosition(float speed)
+	{
+		float speedPercent = Mathf.Abs(speed) / maxSpeed;
+		float turnDir = -Mathf.Sign(speed) * Vector3.SignedAngle(transform.forward, priorDirection, Vector3.up);
+		float x = (turnDir / maxTurnAngle) * maxCamHorizontalTilt;
+		float y = baseCamYPosition;
+		float z = -speedPercent * maxCamZoomOut + baseCamZoomOut;
+
+		Vector3 camMove = new Vector3(x, y, z);
+		if (speedPercent >= camWobbleThreshhold)
+		{
+			float wobblePercentNormalized = (speedPercent - camWobbleThreshhold) / (1f - camWobbleThreshhold);
+			camMove += new Vector3(
+				Random.Range(-camWobbleIntensity, camWobbleIntensity),
+				Random.Range(-camWobbleIntensity, camWobbleIntensity),
+				Random.Range(-camWobbleIntensity, camWobbleIntensity)
+			) * wobblePercentNormalized;
+		}
+
+		//Might want to multiply Time.fixedDeltaTime by some variable so that hard braking zooms in camera faster, etc.
+		Camera.main.transform.localPosition = Vector3.Slerp(Camera.main.transform.localPosition, camMove, Time.fixedDeltaTime);
+	}
 
 	private void FrontWheelTurnHandler(Vector3 move)
 	{
@@ -211,86 +268,92 @@ public class PlayerCar : MonoBehaviour
 		frontWheelAxes.ForEach(i => i.transform.localEulerAngles = new Vector3(0, currentRot, 0));
 	}
 
-	void RadioMessage()
+	void OnCollisionEnter(Collision collision)
 	{
-		//do ui/sound
-		if (!playedMessage)
+		Collider other = collision.collider;
+		if ((other.gameObject.CompareTag("Obstacle") || other.gameObject.CompareTag("BuildingCollider")) && Time.time - buffer > 3)
 		{
-			//Debug.Log("Play Radio message");
-			radioMessage.gameObject.SetActive(true);
-			messageTimer = Time.time;
-			playedMessage = true;
+			TakeDamage();
+		}
+	}
+	
+	void OnTriggerEnter(Collider other)
+	{
+		
+		if (other.gameObject.CompareTag("Puddle"))
+		{
+			hydroplaning = true;
+			hydroplaneCurrentForward = transform.forward;
 		}
 	}
 
-	#region CollisionDetection
-	void OnTriggerEnter(Collider other)
+	void OnTriggerExit(Collider other)
 	{
-		if ((other.gameObject.tag == "Obstacle" || other.gameObject.tag == "BuildingCollider") && Time.time - buffer > 3)
-			TakeDamage();
+		if (other.gameObject.CompareTag("Puddle"))
+		{
+			hydroplaning = false;
+			if (Vector3.Angle(transform.forward, hydroplaneCurrentForward) > maxHydroplaneTurnAngle)
+			{
+				priorSpeed = Mathf.Min(priorSpeed, hydroplaneEndSpeed);
+			}
+		}
 	}
 
 	void TakeDamage()
 	{
-		health--;
-		Debug.Log("oof, health: " + health);
+		float prevHealth = health;
+		health -= (int)Mathf.Abs(speed) * 3 / 4;
 		buffer = Time.time;
-		speedMultiplier *= .8f;
-		rotSpeed *= .8f;
-		wheelTurnSpeed *= .8f;
-		//play crash sound, change to damaged model, slow car?
+		if ((Mathf.Ceil(health / 10) * 10 - 20) % 30 == 0 && prevHealth - health > 10)
+		{
+			speedMultiplier *= .8f;
+			turnSpeedMultiplier *= .8f;
+			wheelTurnSpeed *= .8f;
+		}
+
+		sfx.Crash();
+
+		// Adjusts the mesh body's blend shape weight based on the current health
+		carBody.GetComponent<SkinnedMeshRenderer>().SetBlendShapeWeight(0, 100 - health);
 	}
 
 	void GameOver()
 	{
-		Destroy(transform.GetChild(0).gameObject);
-		//transition to gameover screen
+		// GameManager.instance.FadeToBlack(GameManager.instance.FadeTransitionSpeedPerFrame, fadeOut);
+		// GameManager.instance.FadeToBlackAndLoad(.1f, 0);
+		// GameManager.instance.FadeFromBlack(GameManager.instance.FadeTransitionSpeedPerFrame, fadeOut);
+		GameManager.instance.FadeToBlackAndLoad(1, 0);
+
+		maxSpeed = 0;
 	}
 
-	#endregion
-
-	#region CarRotation
-	IEnumerator RotateAbout(Vector3 point, Vector3 axis, float angle, float time)
+	void fadeOut()
 	{
-		Quaternion rotation = Quaternion.AngleAxis(angle, axis);
-		Vector3 startPos = pos - point,
-						endPos = rotation * startPos;
-		Quaternion startRot = transform.rotation;
-		float step = 0,
-					smoothStep = 0,
-					rate = 1f / time;
-		while (step < 1)
-		{
-			step += Time.deltaTime * rate;
-			smoothStep = Mathf.SmoothStep(0, 1, step);
-			transform.position = point + Vector3.Slerp(startPos, endPos, smoothStep);
-			transform.rotation = startRot * Quaternion.Slerp(Quaternion.identity, rotation, smoothStep);
-			yield return null;
-		}
-		if (step > 1)
-		{
-			transform.position = point + endPos;
-			transform.rotation = startRot * rotation;
-		}
+		Debug.Log("load callback");
+		GameManager.instance.LoadScene(0);
 	}
 
-	IEnumerator RotateObject(Vector3 point, Vector3 axis, float angle, float time)
+	#region MobileControlCallbacks
+
+	public void GasPedalDown()
 	{
-		float step = 0,
-					rate = 1f / time,
-					smoothStep = 0,
-					lastStep = 0;
-		while (step < 1)
-		{
-			step += Time.deltaTime * rate;
-			smoothStep = Mathf.SmoothStep(0, 1, step);
-			transform.RotateAround(point, axis, angle * (smoothStep - lastStep));
-			lastStep = smoothStep;
-			yield return null;
-		}
-
-		if (step > 1)
-			transform.RotateAround(point, axis, angle * (1 - lastStep));
+		accelerating = true;
 	}
+
+	public void GasPedalUp()
+	{
+		accelerating = false;
+	}
+
+	public void BrakePedalDown()
+	{
+		braking = true;
+	}
+
+	public void BrakePedalUp()
+	{
+		braking = false;
+	}
+
 	#endregion
 }

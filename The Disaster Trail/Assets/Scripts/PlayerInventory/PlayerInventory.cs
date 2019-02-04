@@ -90,7 +90,33 @@ public class PlayerInventory : MonoBehaviour
 		}
 	}
 
-	public GameItem GetCurrentItem()
+    //Overloaded to take string and removes one item
+    public void RemoveFromInventory(string item)
+    {
+        //Remove item quantity from inventory item.
+        //If that brings quantity to <= 0, remove item from inventory.
+        int idx = localInventory.inventory.FindIndex(i => string.Equals(i.displayName, item));
+
+        if (idx < 0)
+        {
+            return;
+        }
+
+        localInventory.inventory[idx].quantity -= 1;
+        if (localInventory.inventory[idx].quantity <= 0)
+        {
+            localInventory.inventory.RemoveAt(idx);
+
+            //If the item removed from inventory is the LAST item, put current item to the previous item.
+            //In all other cases the current item will point to the NEXT item in the inventory.
+            if (idx == localInventory.inventory.Count)
+            {
+                localInventory.currentItem--;
+            }
+        }
+    }
+
+    public GameItem GetCurrentItem()
 	{
 		if (localInventory.currentItem < 0)
 		{
@@ -99,6 +125,11 @@ public class PlayerInventory : MonoBehaviour
 		}
 		return localInventory.inventory[localInventory.currentItem];
 	}
+
+    public bool CheckForItem(string name)
+    {
+        return localInventory.inventory.Exists(i => Equals(i.displayName, name));
+    }
 
 	public float GetCurrentMoney()
 	{
@@ -124,6 +155,8 @@ public class PlayerInventory : MonoBehaviour
 			localInventory.currentItem = localInventory.inventory.Count - 1;
 		}
 	}
+
+
 
 	public void SaveInventory()
 	{

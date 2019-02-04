@@ -232,11 +232,11 @@ GameObject:
   - component: {fileID: 2526729542850463166}
   - component: {fileID: 3253194462419251423}
   m_Layer: 0
-  m_Name: Building1Gree
+  m_Name: Building1Blue
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 1
   m_IsActive: 1
 --- !u!4 &9219963657263198164
 Transform:

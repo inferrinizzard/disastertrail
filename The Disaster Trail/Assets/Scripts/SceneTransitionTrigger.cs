@@ -6,9 +6,13 @@ public class SceneTransitionTrigger : MonoBehaviour
 {
     [SerializeField] private int sceneNumber;
     [SerializeField] private GameObject guiObject;
-    [SerializeField] private GameManager gm;
+    private GameManager gm;
     [SerializeField] private float transitionTime = 1f;
 
+    private void Awake()
+    {
+        gm = GameObject.Find("GameManager").GetComponent<GameManager>();
+    }
 
     private void OnTriggerStay(Collider other)
     {
@@ -17,7 +21,7 @@ public class SceneTransitionTrigger : MonoBehaviour
             guiObject.SetActive(true);
             if (Input.GetKeyDown(KeyCode.E))
             {
-                gm.FadeToBlack(transitionTime, () => gm.LoadScene(sceneNumber, transitionTime));
+                gm.FadeToBlackAndLoad(transitionTime, 2);
             }
         }
     }

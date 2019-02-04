@@ -168,7 +168,7 @@ GameObject:
   - component: {fileID: 2223760551139876948}
   m_Layer: 0
   m_Name: pCube8
-  m_TagString: Untagged
+  m_TagString: Obstacle
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -243,7 +243,7 @@ BoxCollider:
   m_IsTrigger: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Size: {x: 2.7670448, y: 2.948907, z: 9.66331}
+  m_Size: {x: 3.25, y: 3.25, z: 10}
   m_Center: {x: -0.029682279, y: 0, z: 0}
 --- !u!1 &5415660138736091706
 GameObject:
@@ -564,7 +564,7 @@ GameObject:
   - component: {fileID: 2907460432402193077}
   m_Layer: 0
   m_Name: Bus
-  m_TagString: Untagged
+  m_TagString: Obstacle
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

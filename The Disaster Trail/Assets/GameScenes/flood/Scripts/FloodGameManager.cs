@@ -9,32 +9,43 @@ using UnityEngine.UI;
 public class FloodGameManager : MonoBehaviour
 {
 	[SerializeField] private Transform startObj, endObj, player;
-	[SerializeField] private int numBlocks;
+	[SerializeField] private int numBlocksHorizontal;
+	[SerializeField] private int numBlocksVertical;
 	[SerializeField] private float blockDist;
 	[SerializeField] private float roadWidth;
 	[SerializeField] private float pathUpdateDelay;
 	[SerializeField] private float endGameCheckDelay;
 	[SerializeField] private LayerMask playerLayer;
-	[SerializeField] private List<GameObject> roadBlockPrefabs;
+	[SerializeField] private List<GameObject> staticRoadBlockPrefabs;
+	[SerializeField] private List<GameObject> dynamicRoadBlockPrefabs;
 	[SerializeField] private List<GameObject> roadObstaclePrefabs;
+	[SerializeField] private List<GameObject> puddles;
 	[SerializeField] private float giveDirectionDistance;
 	[SerializeField]
 	[Tooltip("The maximum angle away from the intersection the player can look before the turn signal doesn't show up")]
 	private float maxLookTurnAngle;
+	[SerializeField] private GameObject obstacles;
+	[SerializeField] private GameObject stats;
 
-	[SerializeField] private GameObject FloodWaterPlane;
+	[Header("Gameplay Options")]
+	[Tooltip("The amount of time in seconds before the game should end because the water level is full.")]
+	[SerializeField] private float waterLevelEndTime = 60;
 
-
-	[Header("UI Direction Arrows")] [SerializeField] private Sprite leftArrow;
+	[Header("HUD")] [SerializeField] private Sprite leftArrow;
 	[SerializeField] private Sprite rightArrow;
 	[SerializeField] private Sprite upArrow;
 	[SerializeField] private Sprite turnAroundArrow;
 	[SerializeField] private Image directionArrow;
 
+	[Header("Menus")] [SerializeField] private GameObject mobileControls;
+	[SerializeField] private GameObject pauseMenu;
+
 	private PlayerCar playerCar;
 	private AdjacencyList<Vector3> referenceGraph;
 	private AdjacencyList<Vector3> pathingGraph;
 	private List<Vector3> path;
+	private float progress = 0, fullPathLength;
+
 
 	private readonly Vector3[] intToV3 = {
 		Vector3.forward,
@@ -59,19 +70,33 @@ public class FloodGameManager : MonoBehaviour
 		{ Vector3.left, Vector3.forward }
 	};
 
-	private void Start()
+	//Flood sound manager
+	private FloodSoundManager fsm;
+
+	/*
+	 * Returns a float in the range [0, 1], 1 being full flood (game over).
+	 */
+	public float GetWaterLevel()
 	{
+		return Mathf.Clamp01(Time.time / waterLevelEndTime);
+	}
+
+    private void Start() 
+	{
+#if UNITY_IOS || UNITY_ANDROID
+		mobileControls.SetActive(true);
+#endif
+		fsm = GetComponent<FloodSoundManager>();
+
 		playerCar = player.GetComponent<PlayerCar>();
 		player.position = startObj.position;
 		referenceGraph = new AdjacencyList<Vector3>(Vector3.zero);
 		pathingGraph = new AdjacencyList<Vector3>(Vector3.zero);
 
-		//Start raising the flood water plane
-		StartCoroutine(RaiseFloodPlane());
 
-		for (int i = 0; i < numBlocks; i++)
+		for (int i = 0; i < numBlocksHorizontal; i++)
 		{
-			for (int j = 0; j < numBlocks; j++)
+			for (int j = 0; j < numBlocksVertical; j++)
 			{
 				Vector3 pos = new Vector3(i * blockDist, 0, j * blockDist);
 				foreach (Vector3 neighbor in GetNeighbors(pos))
@@ -103,55 +128,66 @@ public class FloodGameManager : MonoBehaviour
 		float startDir = v3ToInt[(path[1] - path[0]).normalized];
 		player.eulerAngles = new Vector3(0f, startDir, 0f);
 
+		List<Vector3> startNeighborsMids = referenceGraph.FindNeighbours(startObj.position).Select(i => (startObj.position + i) / 2).ToList();
 
 		//spawn in roadblock prefabs along 3/4s of blocked edges
-		int startIdx = removedEdges.Count * 3 / 4;
-		for (int i = startIdx; i >= 0; i--)
+		int endIdx = removedEdges.Count * 3 / 4;
+		for (int i = 0; i < endIdx; i++)
 		{
 			KeyValuePair<Vector3, Vector3> edge = removedEdges[i];
-			GameObject toInstantiate = roadBlockPrefabs[Random.Range(0, roadBlockPrefabs.Count)];
+			GameObject toInstantiate = staticRoadBlockPrefabs[Random.Range(0, staticRoadBlockPrefabs.Count)];
 			Vector3 midpoint = (edge.Key + edge.Value) / 2;
+			if (startNeighborsMids.Any(x => x == midpoint))
+				continue;
+
 			Quaternion rot = Quaternion.Euler(0f, Mathf.Abs((edge.Key - edge.Value).x) > 0f ? 90f : 0f, 0f);
-			Instantiate(toInstantiate, midpoint, rot);
+			Instantiate(toInstantiate, midpoint, rot, obstacles.transform);
 			pathingGraph.RemoveEdge(edge.Key, edge.Value);
 		}
 
 		//spawn in obstacles along valid edges
 		HashSet<Vector3> edgeSet = new HashSet<Vector3>();
+
+		//prevent items from spawning on edges surrounding player's spawn point
+		startNeighborsMids.ForEach(i => edgeSet.Add(i));
 		foreach (Vector3 vertex in referenceGraph.GetAllEdges())
 		{
 			foreach (Vector3 neighbor in referenceGraph.FindNeighbours(vertex))
 			{
 				Vector3 mid = (vertex + neighbor) / 2;
-				if (Random.Range(0, 2) > 0 && !edgeSet.Contains(mid))
+				bool onX = Mathf.Abs((vertex - neighbor).x) > 0;
+
+				if (!edgeSet.Contains(mid) && Random.Range(0, 2) > 0)
 				{
 					GameObject toInstantiate = roadObstaclePrefabs[Random.Range(0, roadObstaclePrefabs.Count)];
-					bool onX = Mathf.Abs((vertex - neighbor).x) > 0;
 					float randStreetOffsetLong = Random.Range(-blockDist / 2, blockDist / 2);
 					float randStreetOffsetWide = Random.Range(-roadWidth / 4, roadWidth / 4);
 					Vector3 boundedRandomPosInStreet = mid;
 					boundedRandomPosInStreet += onX ? new Vector3(randStreetOffsetLong, 0f, randStreetOffsetWide) : new Vector3(randStreetOffsetWide, 0f, randStreetOffsetLong);
 					Quaternion rot = Quaternion.Euler(0f, onX ? Random.Range(60, 120) : Random.Range(-30, 30), 0f);
-					Instantiate(toInstantiate, boundedRandomPosInStreet, rot);
+					Instantiate(toInstantiate, boundedRandomPosInStreet, rot, obstacles.transform);
+				}
+
+				if (!edgeSet.Contains(mid) && Random.Range(0, 3) > 0)
+				{
+					GameObject toInstantiate = puddles[Random.Range(0, puddles.Count)];
+					float randStreetOffsetLong = Random.Range(-blockDist / 2, blockDist / 2);
+					float randStreetOffsetWide = Random.Range(-roadWidth / 4, roadWidth / 4);
+					Vector3 boundedRandomPosInStreet = mid;
+					boundedRandomPosInStreet += onX ? new Vector3(randStreetOffsetLong, 0f, randStreetOffsetWide) : new Vector3(randStreetOffsetWide, 0f, randStreetOffsetLong);
+					Quaternion rot = Quaternion.Euler(0f, Random.Range(0, 360), 0f);
+					Instantiate(toInstantiate, boundedRandomPosInStreet, rot, obstacles.transform);
 				}
 				edgeSet.Add(mid);
 			}
 		}
 
-
+		fullPathLength = path.Count;
 		StartCoroutine(UpdatePathOnDelay(pathUpdateDelay));
 		StartCoroutine(EndGameCheckOnDelay(endGameCheckDelay, endObj.position, new Vector3(roadWidth, roadWidth, roadWidth) / 2f, playerLayer));
+
 	}
 
-	private IEnumerator RaiseFloodPlane()
-	{
-		//Raise the flood water plane gradually until it reaches a certain height
-		while (FloodWaterPlane.transform.position.y < 2)
-		{
-			FloodWaterPlane.transform.position += new Vector3(0, Time.deltaTime * 0.001f, 0);
-			yield return null;
-		}
-	}
 
 	private IEnumerator EndGameCheckOnDelay(float delay, Vector3 position, Vector3 halfScale, LayerMask layer)
 	{
@@ -161,10 +197,17 @@ public class FloodGameManager : MonoBehaviour
 		}
 
 		//player has reached the end destination. Start end minigame processing
-		GameManager.instance.FadeToBlack(GameManager.instance.FadeTransitionSpeedPerFrame, () =>
+		GameManager.instance.FadeToBlack(.1f, () =>
 		{
-			//player.gameObject.GetComponent<PlayerInventory>().SaveInventory();
-			//SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex + 1);
+            if (GameManager.instance.storyMode)
+            {
+                GameManager.instance.LoadScene(2);
+            }
+            else 
+            {
+                GameManager.instance.LoadScene(0);
+            }
+            
 		});
 	}
 
@@ -176,22 +219,31 @@ public class FloodGameManager : MonoBehaviour
 		{
 			Vector3 next = GetNextIntersection();
 			Vector3 prev = GetPreviousIntersection();
+			
+			// Stats now only shows the water level.
+			//stats.GetComponentInChildren<Slider>().value = (Vector3.Distance(player.position, prev) + (fullPathLength - path.Count) * blockDist) / (blockDist * fullPathLength);
+			//stats.GetComponentInChildren<Text>().text = playerCar.health.ToString();
 
 			if (next != Vector3.zero)
 			{
-				if (!pathingGraph.ContainsEdge(next, prev) && Vector3.Distance(player.position, next) > Vector3.Distance(player.position, prev))
+				if (!pathingGraph.ContainsEdge(next, prev) && (player.position - next).sqrMagnitude > (player.position - prev).sqrMagnitude)
 				{
 					directionArrow.sprite = turnAroundArrow;
 					directionArrow.gameObject.SetActive(true);
+					fsm.DirectionAudio(3);
 				}
-				else if (!referenceGraph.ContainsEdge(next, prev) && Vector3.Distance(player.position, next) > Vector3.Distance(player.position, prev))
+				else if (!referenceGraph.ContainsEdge(next, prev) && (player.position - next).sqrMagnitude > (player.position - prev).sqrMagnitude)
 				{
 					//edge exists in pathing graph, but not in reference graph. Queue interaction to block edge in pathing graph
 					pathingGraph.RemoveEdge(next, prev);
-					GameObject toInstantiate = roadBlockPrefabs[Random.Range(0, roadBlockPrefabs.Count)];
+					bool onX = Mathf.Abs((next - prev).x) > 0f;
+					int randSide = (int)Mathf.Sign(Random.Range(-1f, 1f));
+					GameObject toInstantiate = dynamicRoadBlockPrefabs[Random.Range(0, dynamicRoadBlockPrefabs.Count)];
+					int index = dynamicRoadBlockPrefabs.IndexOf(toInstantiate);
 					Vector3 midpoint = (next + prev) / 2;
-					Quaternion rot = Quaternion.Euler(0f, Mathf.Abs((next - prev).x) > 0f ? 90f : 0f, 0f);
+					Quaternion rot = Quaternion.Euler(0f, onX ? 90f : 0f, 0f);
 					Instantiate(toInstantiate, midpoint, rot);
+					fsm.ObstacleSound(index);
 				}
 				else
 				{
@@ -219,16 +271,39 @@ public class FloodGameManager : MonoBehaviour
 	private void TurnDirection(Vector3 nextPos, Vector3 nextDir)
 	{
 		Vector3 approachDir = intToV3[(int)Mathf.Round(player.eulerAngles.y / 90f) % 4];
-		if (approachDir == nextDir)
-			directionArrow.sprite = upArrow;
-		else if (rightTurn[approachDir] == nextDir)
-			directionArrow.sprite = rightArrow;
-		else if (-rightTurn[approachDir] == nextDir)
-			directionArrow.sprite = leftArrow;
-		else
-			directionArrow.sprite = turnAroundArrow;
 
-		directionArrow.gameObject.SetActive((nextPos - player.position).magnitude < giveDirectionDistance || directionArrow.sprite == turnAroundArrow);
+		//Corralates int to direction
+		int direction = 0;
+
+		if (approachDir == nextDir)
+		{
+			directionArrow.sprite = upArrow;
+			direction = 0;
+		}
+		else if (rightTurn[approachDir] == nextDir)
+		{
+			directionArrow.sprite = rightArrow;
+			direction = 1;
+		}
+		else if (-rightTurn[approachDir] == nextDir)
+		{
+			directionArrow.sprite = leftArrow;
+			direction = 2;
+		}
+		else
+		{
+			directionArrow.sprite = turnAroundArrow;
+			direction = 3;
+		}
+
+
+		directionArrow.gameObject.SetActive((nextPos - player.position).magnitude < giveDirectionDistance);
+		if (directionArrow.gameObject.activeSelf)
+		{
+			fsm.DirectionAudio(direction);
+		}
+
+
 	}
 
 	private Vector3 GetNextIntersection()
@@ -334,12 +409,12 @@ public class FloodGameManager : MonoBehaviour
 
 		if (pos.x - blockDist >= 0)
 			neighbors.Add(new Vector3(pos.x - blockDist, 0, pos.z));
-		if (pos.x + blockDist < blockDist * numBlocks)
+		if (pos.x + blockDist < blockDist * numBlocksHorizontal)
 			neighbors.Add(new Vector3(pos.x + blockDist, 0, pos.z));
 
 		if (pos.z - blockDist >= 0)
 			neighbors.Add(new Vector3(pos.x, 0, pos.z - blockDist));
-		if (pos.z + blockDist < blockDist * numBlocks)
+		if (pos.z + blockDist < blockDist * numBlocksVertical)
 			neighbors.Add(new Vector3(pos.x, 0, pos.z + blockDist));
 
 		return neighbors;

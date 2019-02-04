@@ -49,6 +49,11 @@ PrefabInstance:
       propertyPath: m_Name
       value: BikeCyan
       objectReference: {fileID: 0}
+    - target: {fileID: 8979395578195509675, guid: 9f5a50e06d6d8724688f62c79a680223,
+        type: 3}
+      propertyPath: m_TagString
+      value: Obstacle
+      objectReference: {fileID: 0}
     - target: {fileID: 7198212814470580320, guid: 9f5a50e06d6d8724688f62c79a680223,
         type: 3}
       propertyPath: m_LocalPosition.x
@@ -139,6 +144,11 @@ PrefabInstance:
       propertyPath: m_Name
       value: SpeedLimitSign40
       objectReference: {fileID: 0}
+    - target: {fileID: 6127657150811774634, guid: d65efa453d2117941a54b21ed84c56c4,
+        type: 3}
+      propertyPath: m_TagString
+      value: Obstacle
+      objectReference: {fileID: 0}
     - target: {fileID: 8658940146913843367, guid: d65efa453d2117941a54b21ed84c56c4,
         type: 3}
       propertyPath: m_LocalPosition.x
@@ -213,6 +223,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: TrashCan2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4419234953618460145, guid: 951966ace411747429bfc949c920f96d,
+        type: 3}
+      propertyPath: m_TagString
+      value: Obstacle
       objectReference: {fileID: 0}
     - target: {fileID: 5018191159423605263, guid: 951966ace411747429bfc949c920f96d,
         type: 3}
@@ -363,6 +378,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: PottedPlanter1
+      objectReference: {fileID: 0}
+    - target: {fileID: 505293279546479076, guid: a168142b034e6f24f83bbbcc6e001b57,
+        type: 3}
+      propertyPath: m_TagString
+      value: Obstacle
       objectReference: {fileID: 0}
     - target: {fileID: 5557650133662959705, guid: a168142b034e6f24f83bbbcc6e001b57,
         type: 3}

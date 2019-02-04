@@ -245,7 +245,7 @@ GameObject:
   - component: {fileID: 6899436883711220738}
   m_Layer: 0
   m_Name: Body
-  m_TagString: Untagged
+  m_TagString: Obstacle
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -410,7 +410,7 @@ GameObject:
   - component: {fileID: 1819645028331981477}
   m_Layer: 0
   m_Name: Car2Yellow
-  m_TagString: Untagged
+  m_TagString: Obstacle
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0

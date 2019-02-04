@@ -13,7 +13,7 @@ ModelImporter:
     400004: polySurface17
     400006: polySurface4
     400008: //RootNode
-    2100000: Snowman
+    2100000: Snowman1
     2300000: polySurface13
     2300002: polySurface16
     2300004: polySurface17
@@ -26,7 +26,12 @@ ModelImporter:
     4300002: polySurface4
     4300004: polySurface16
     4300006: polySurface17
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Snowman1
+    second: {fileID: 2100000, guid: fdb077450b7798644ad41636477d33cb, type: 2}
   materials:
     importMaterials: 1
     materialName: 0

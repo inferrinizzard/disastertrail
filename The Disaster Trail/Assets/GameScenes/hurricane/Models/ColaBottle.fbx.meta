@@ -9,7 +9,12 @@ ModelImporter:
     2300000: //RootNode
     3300000: //RootNode
     4300000: polySurface4
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: ColaBottle
+    second: {fileID: 2100000, guid: cdb4da8c063a8834d8bbab685c3a061d, type: 2}
   materials:
     importMaterials: 1
     materialName: 0

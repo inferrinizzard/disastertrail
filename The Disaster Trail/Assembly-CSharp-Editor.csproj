@@ -53,8 +53,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-     <Compile Include="Assets\Editor\PrefabTiler.cs" />
+     <Compile Include="Assets\Editor\SceneObjectTiler.cs" />
      <Compile Include="Assets\Editor\StreetTiler.cs" />
+     <Compile Include="Assets\LeanTween\Editor\LeanTweenDocumentationEditor.cs" />
  <Reference Include="Unity.TextMeshPro.Editor">
  <HintPath>C:/Users/infer/Documents/GitHub/disastertrail/The Disaster Trail/Library/ScriptAssemblies/Unity.TextMeshPro.Editor.dll</HintPath>
  </Reference>

@@ -3,12 +3,19 @@ guid: e8fa7a5a4d04eef4e838e0722de581f8
 ModelImporter:
   serializedVersion: 23
   fileIDToRecycleName:
-    100000: //RootNode
-    400000: //RootNode
+    100000: polySurface44
+    100002: polySurface45
+    100004: //RootNode
+    400000: polySurface44
+    400002: polySurface45
+    400004: //RootNode
     2100000: Shower
-    2300000: //RootNode
-    3300000: //RootNode
-    4300000: polySurface9
+    2300000: polySurface44
+    2300002: polySurface45
+    3300000: polySurface44
+    3300002: polySurface45
+    4300000: polySurface44
+    4300002: polySurface45
   externalObjects:
   - first:
       type: UnityEngine:Material

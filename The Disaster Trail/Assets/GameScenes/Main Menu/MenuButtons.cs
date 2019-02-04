@@ -10,7 +10,6 @@ public class MenuButtons : MonoBehaviour
     [SerializeField] private GameObject flood;
     [SerializeField] private GameObject hurricane;
     [SerializeField] private GameObject back;
-    [SerializeField] private GameManager gm;
 
     // Start is called before the first frame update
     void Start()
@@ -18,13 +17,12 @@ public class MenuButtons : MonoBehaviour
         flood.SetActive(false);
         hurricane.SetActive(false);
         back.SetActive(false);
-
     }
 
     public void OnPlay()
     {
-        gm.FadeToBlackAndLoad(.1f, 1);
-        gm.setStoryMode(true);
+        GameManager.instance.FadeToBlackAndLoad(.1f, 2);
+        GameManager.instance.storyMode = true;
     }
 
     public void OnMiniGame()
@@ -38,14 +36,14 @@ public class MenuButtons : MonoBehaviour
 
     public void OnFlood()
     {
-        gm.FadeToBlackAndLoad(.1f, 3);
+        GameManager.instance.FadeToBlackAndLoad(.1f, 6);
         flood.SetActive(false);
         hurricane.SetActive(false);
     }
 
     public void OnHurricane()
     {
-        gm.FadeToBlackAndLoad(.1f, 2);
+        GameManager.instance.FadeToBlackAndLoad(.1f, 7);
         flood.SetActive(false);
         hurricane.SetActive(false);
     }

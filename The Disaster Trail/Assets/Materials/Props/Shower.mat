@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Shower
-  m_Shader: {fileID: 4800000, guid: 6d314105d1988534180e6001fedbd4d3, type: 3}
+  m_Shader: {fileID: 4800000, guid: c4dea29e477436c46897c1a6fca9868e, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -74,6 +74,7 @@ Material:
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
+    - _Opacity: 1
     - _OutlineWidth: 0.06
     - _Parallax: 0.02
     - _SpecularHighlights: 1

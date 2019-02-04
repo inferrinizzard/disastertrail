@@ -2,20 +2,34 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Priority_Queue;
+using UnityEngine.UI;
 
 public class FloodGameManager : MonoBehaviour
 {
 	[SerializeField] private Transform startObj, endObj, player;
-	[SerializeField] private int numBlocks;
-	[SerializeField] private float blockDist;
-	[SerializeField] private float minBlocksFromEdge;
-	[SerializeField] private Transform map;
+	[SerializeField] private int numBlocksHorizontal, numBlocksVertical;
+	[SerializeField] private float blockDist, roadWidth;
+	[SerializeField] private float pathUpdateDelay, endGameCheckDelay;
+	[SerializeField] private LayerMask playerLayer;
+	[SerializeField] private List<GameObject> roadBlockPrefabs, roadObstaclePrefabs;
+	[SerializeField] private float giveDirectionDistance;
+	[SerializeField]
+	[Tooltip("The maximum angle away from the intersection the player can look before the turn signal doesn't show up")]
+	private float maxLookTurnAngle;
 
-	int streets, avenues, horCount = 5;
+	[SerializeField] private GameObject FloodWaterPlane, obstacleGO;
+	FloodSoundManager fsm;
+
+	[Header("UI Direction Arrows")] [SerializeField] private Sprite leftArrow;
+	[SerializeField] private Sprite rightArrow, upArrow, turnAroundArrow;
+	[SerializeField] private Image directionArrow;
+
+	[Header("Mobile Controls")] [SerializeField] private List<GameObject> mobileControls;
 
 	private PlayerCar playerCar;
-	private AdjacencyList<Vector3> roadGraph;
+	private AdjacencyList<Vector3> referenceGraph, pathingGraph;
 	private List<Vector3> path;
 
 	private readonly Vector3[] intToV3 = {
@@ -43,82 +57,205 @@ public class FloodGameManager : MonoBehaviour
 
 	private void Start()
 	{
+#if UNITY_IOS || UNITY_ANDROID
+		mobileControls.ForEach(i => i.SetActive(true));
+#endif
+
 		playerCar = player.GetComponent<PlayerCar>();
 		player.position = startObj.position;
-		roadGraph = new AdjacencyList<Vector3>(Vector3.zero);
+		referenceGraph = new AdjacencyList<Vector3>(Vector3.zero);
+		pathingGraph = new AdjacencyList<Vector3>(Vector3.zero);
+		fsm = GetComponent<FloodSoundManager>();
 
-		for (int i = 0; i < numBlocks; i++)
+		for (int i = 0; i < numBlocksHorizontal; i++)
 		{
-			for (int j = 0; j < numBlocks; j++)
+			for (int j = 0; j < numBlocksVertical; j++)
 			{
 				Vector3 pos = new Vector3(i * blockDist, 0, j * blockDist);
 				foreach (Vector3 neighbor in GetNeighbors(pos))
 				{
-					roadGraph.AddEdge(pos, neighbor);
+					referenceGraph.AddEdge(pos, neighbor);
+					pathingGraph.AddEdge(pos, neighbor);
 				}
 			}
 		}
 
 		//Remove edges until there is no path found
 		List<KeyValuePair<Vector3, Vector3>> removedEdges = new List<KeyValuePair<Vector3, Vector3>>();
-		while (AStar(roadGraph, startObj.position, endObj.position, out List<Vector3> pathIter))
+		while (AStar(referenceGraph, startObj.position, endObj.position, out List<Vector3> pathIter))
 		{
 			path = pathIter;
-			Vector3 start = roadGraph.GetRandomVertex();
-			List<Vector3> neighbors = roadGraph.FindNeighbours(start);
+			Vector3 start = referenceGraph.GetRandomVertex();
+			List<Vector3> neighbors = referenceGraph.FindNeighbours(start);
 			Vector3 neighbor = neighbors[Random.Range(0, neighbors.Count)];
-			roadGraph.RemoveEdge(start, neighbor);
+			referenceGraph.RemoveEdge(start, neighbor);
 			removedEdges.Add(new KeyValuePair<Vector3, Vector3>(start, neighbor));
 		}
 
 		//Add the last removed edge back in
 		KeyValuePair<Vector3, Vector3> lastEdge = removedEdges.Last();
 		removedEdges.RemoveAt(removedEdges.Count - 1);
-		roadGraph.AddEdge(lastEdge.Key, lastEdge.Value);
+		referenceGraph.AddEdge(lastEdge.Key, lastEdge.Value);
 
 		//face the player's car in the direction of the first waypoint
-		float startDir = v3ToInt[(path[1] - path[0]) / blockDist];
+		float startDir = v3ToInt[(path[1] - path[0]).normalized];
 		player.eulerAngles = new Vector3(0f, startDir, 0f);
 
-		/*
-		foreach (KeyValuePair<Vector3, Vector3> edge in removedEdges)
+		List<Vector3> startNeighborsMids = referenceGraph.FindNeighbours(startObj.position).Select(i => (startObj.position + i) / 2).ToList();
+
+		//spawn in roadblock prefabs along 3/4s of blocked edges
+		int endIdx = removedEdges.Count * 3 / 4;
+		for (int i = 0; i < endIdx; i++)
 		{
-			//Instantiate something on this edge
+			KeyValuePair<Vector3, Vector3> edge = removedEdges[i];
+			GameObject toInstantiate = roadBlockPrefabs[Random.Range(0, roadBlockPrefabs.Count)];
+			Vector3 midpoint = (edge.Key + edge.Value) / 2;
+			if (startNeighborsMids.Any(x => x == midpoint))
+				continue;
+
+			Quaternion rot = Quaternion.Euler(0f, Mathf.Abs((edge.Key - edge.Value).x) > 0f ? 90f : 0f, 0f);
+			Instantiate(toInstantiate, midpoint, rot, obstacleGO.transform);
+			pathingGraph.RemoveEdge(edge.Key, edge.Value);
 		}
-		*/
-		
-		StartCoroutine(UpdatePathOnDelay(.5f));
+
+		//spawn in obstacles along valid edges
+		HashSet<Vector3> edgeSet = new HashSet<Vector3>();
+
+		//prevent items from spawning on edges surrounding player's spawn point
+		startNeighborsMids.ForEach(i => edgeSet.Add(i));
+		foreach (Vector3 vertex in referenceGraph.GetAllEdges())
+		{
+			foreach (Vector3 neighbor in referenceGraph.FindNeighbours(vertex))
+			{
+				Vector3 mid = (vertex + neighbor) / 2;
+				if (!edgeSet.Contains(mid) && Random.Range(0, 2) > 0)
+				{
+					GameObject toInstantiate = roadObstaclePrefabs[Random.Range(0, roadObstaclePrefabs.Count)];
+					bool onX = Mathf.Abs((vertex - neighbor).x) > 0;
+					float randStreetOffsetLong = Random.Range(-blockDist / 2, blockDist / 2);
+					float randStreetOffsetWide = Random.Range(-roadWidth / 4, roadWidth / 4);
+					Vector3 boundedRandomPosInStreet = mid;
+					boundedRandomPosInStreet += onX ? new Vector3(randStreetOffsetLong, 0f, randStreetOffsetWide) : new Vector3(randStreetOffsetWide, 0f, randStreetOffsetLong);
+					Quaternion rot = Quaternion.Euler(0f, onX ? Random.Range(60, 120) : Random.Range(-30, 30), 0f);
+					Instantiate(toInstantiate, boundedRandomPosInStreet, rot, obstacleGO.transform);
+				}
+				edgeSet.Add(mid);
+			}
+		}
+
+
+		StartCoroutine(UpdatePathOnDelay(pathUpdateDelay));
+		StartCoroutine(EndGameCheckOnDelay(endGameCheckDelay, endObj.position, new Vector3(roadWidth, roadWidth, roadWidth) / 2f, playerLayer));
+
+		//Start raising the flood water plane
+		StartCoroutine(RaiseFloodPlane());
 	}
+
+	private IEnumerator RaiseFloodPlane()
+	{
+		//Raise the flood water plane gradually until it reaches a certain height
+		while (FloodWaterPlane.transform.position.y < 2)
+		{
+			FloodWaterPlane.transform.position += new Vector3(0, Time.deltaTime * 0.001f, 0);
+			yield return null;
+		}
+	}
+
+	private IEnumerator EndGameCheckOnDelay(float delay, Vector3 position, Vector3 halfScale, LayerMask layer)
+	{
+		while (Physics.OverlapBox(position, halfScale, Quaternion.identity, layer).Length == 0)
+		{
+			yield return new WaitForSeconds(delay);
+		}
+		Debug.Log("ending");
+
+		//player has reached the end destination. Start end minigame processing
+		GameManager.instance.FadeToBlack(.1f, () =>
+		{
+			GameManager.instance.LoadScene(2);
+		});
+	}
+
+	#region PathFinding
 
 	private IEnumerator UpdatePathOnDelay(float delay)
 	{
 		while (true)
 		{
-			Vector3 vert = GetNextIntersection();
-			AStar(roadGraph, vert, endObj.position, out path);
-			if (path.Count >= 2)
+			Vector3 next = GetNextIntersection();
+			Vector3 prev = GetPreviousIntersection();
+
+			if (next != Vector3.zero)
 			{
-				Vector3 nextDir = (path[1] - path[0]) / blockDist;
-				Debug.Log(TurnDirection(nextDir));
+				if (!pathingGraph.ContainsEdge(next, prev) && Vector3.Distance(player.position, next) > Vector3.Distance(player.position, prev))
+				{
+					Debug.Log("Not in pathing graph, " + next + ", " + prev);
+					path.ForEach(i => Debug.Log(i));
+					directionArrow.sprite = turnAroundArrow;
+					directionArrow.gameObject.SetActive(true);
+				}
+				else if (!referenceGraph.ContainsEdge(next, prev) && Vector3.Distance(player.position, next) > Vector3.Distance(player.position, prev))
+				{
+					//edge exists in pathing graph, but not in reference graph. Queue interaction to block edge in pathing graph
+					pathingGraph.RemoveEdge(next, prev);
+					GameObject toInstantiate = roadBlockPrefabs[Random.Range(0, roadBlockPrefabs.Count)];
+					Vector3 midpoint = (next + prev) / 2;
+					Quaternion rot = Quaternion.Euler(0f, Mathf.Abs((next - prev).x) > 0f ? 90f : 0f, 0f);
+					Instantiate(toInstantiate, midpoint, rot, obstacleGO.transform);
+				}
+				else
+				{
+					AStar(pathingGraph, next, endObj.position, out path);
+					if (path.Count >= 2)
+					{
+						Vector3 nextDir = (path[1] - path[0]).normalized;
+						TurnDirection(next, nextDir);
+						if (directionArrow.sprite == turnAroundArrow)
+						{
+							Debug.Log(next + ", " + prev);
+							path.ForEach(i => Debug.Log(i));
+						}
+					}
+					else
+					{
+						directionArrow.gameObject.SetActive(false);
+					}
+				}
+			}
+			else
+			{
+				directionArrow.gameObject.SetActive(false);
 			}
 
 			yield return new WaitForSeconds(delay);
 		}
 	}
 
-	private string TurnDirection(Vector3 nextDir)
+	private void TurnDirection(Vector3 nextPos, Vector3 nextDir)
 	{
 		Vector3 approachDir = intToV3[(int)Mathf.Round(player.eulerAngles.y / 90f) % 4];
 		if (approachDir == nextDir)
-			return "Continue Straight";
+			directionArrow.sprite = upArrow;
+		else if (rightTurn[approachDir] == nextDir)
+			directionArrow.sprite = rightArrow;
+		else if (-rightTurn[approachDir] == nextDir)
+			directionArrow.sprite = leftArrow;
+		else
+			directionArrow.sprite = turnAroundArrow;
 
-		if (rightTurn[approachDir] == nextDir)
-			return "Turn Right";
-
-		if (-rightTurn[approachDir] == nextDir)
-			return "Turn Left";
-
-		return "Turn Around";
+		directionArrow.gameObject.SetActive((nextPos - player.position).magnitude < giveDirectionDistance || directionArrow.sprite == turnAroundArrow);
+		if (directionArrow.gameObject.activeSelf && !fsm.soundPlayed)
+		{
+			RaycastHit hit;
+			fsm.soundPlayed = true;
+			Vector3 streetPos = nextPos + new Vector3(nextDir.x * blockDist / 2, .1f, nextDir.z * blockDist / 2);
+			if (Physics.Raycast(streetPos, Vector3.down, out hit))
+				fsm.street = hit.transform.gameObject.name;
+			fsm.turn = (int)nextDir.x;
+			if (directionArrow.sprite == turnAroundArrow)
+				fsm.turn = -10;
+			Debug.Log("next intersection is " + nextPos + ", direction is " + nextDir + ", test pos is " + streetPos);
+		}
 	}
 
 	private Vector3 GetNextIntersection()
@@ -164,6 +301,57 @@ public class FloodGameManager : MonoBehaviour
 				break;
 		}
 
+		if (Vector3.Angle(player.transform.forward, dest - player.transform.position) > maxLookTurnAngle)
+		{
+			return Vector3.zero;
+		}
+
+		return dest;
+	}
+
+	private Vector3 GetPreviousIntersection()
+	{
+		int roundedYDir = (int)Mathf.Round(player.eulerAngles.y / 90f) % 4;
+		Vector3 dest;
+		switch (roundedYDir)
+		{
+			case 0:
+				dest = new Vector3
+				(
+					Mathf.Round(player.position.x / blockDist) * blockDist,
+					0f,
+					Mathf.Floor((player.position.z) / blockDist) * blockDist
+				);
+				break;
+			case 1:
+				dest = new Vector3
+				(
+					Mathf.Floor((player.position.x) / blockDist) * blockDist,
+					0f,
+					Mathf.Round(player.position.z / blockDist) * blockDist
+				);
+				break;
+			case 2:
+				dest = new Vector3
+				(
+					Mathf.Round(player.position.x / blockDist) * blockDist,
+					0f,
+					Mathf.Ceil((player.position.z) / blockDist) * blockDist
+				);
+				break;
+			case 3:
+				dest = new Vector3
+				(
+					Mathf.Ceil((player.position.x) / blockDist) * blockDist,
+					0f,
+					Mathf.Round(player.position.z / blockDist) * blockDist
+				);
+				break;
+			default:
+				dest = Vector3.zero;
+				break;
+		}
+
 		return dest;
 	}
 
@@ -173,12 +361,12 @@ public class FloodGameManager : MonoBehaviour
 
 		if (pos.x - blockDist >= 0)
 			neighbors.Add(new Vector3(pos.x - blockDist, 0, pos.z));
-		if (pos.x + blockDist < blockDist * numBlocks)
+		if (pos.x + blockDist < blockDist * numBlocksHorizontal)
 			neighbors.Add(new Vector3(pos.x + blockDist, 0, pos.z));
 
 		if (pos.z - blockDist >= 0)
 			neighbors.Add(new Vector3(pos.x, 0, pos.z - blockDist));
-		if (pos.z + blockDist < blockDist * numBlocks)
+		if (pos.z + blockDist < blockDist * numBlocksVertical)
 			neighbors.Add(new Vector3(pos.x, 0, pos.z + blockDist));
 
 		return neighbors;
@@ -249,68 +437,5 @@ public class FloodGameManager : MonoBehaviour
 		return path;
 	}
 
-	/*
-	private List<Vector3> GeneratePath(Vector3 startPos, Vector3 startDir, int length)
-	{
-		if (length < 3)
-		{
-			Debug.LogWarning("GeneratePath called with length less than 3. Too short!", gameObject);
-			return null;
-		}
-
-		List<Vector3> path = new List<Vector3> { startDir, startDir };
-
-		Vector3 pos = startPos;
-		Vector3 dir = startDir;
-		for (int i = 2; i < length; i++)
-		{
-			Vector3 newDir = GenerateDirection(path, pos, dir);
-			path.Add(newDir);
-
-			dir = newDir;
-			pos += newDir * blockDist;
-		}
-
-		return path;
-	}
-
-	private Vector3 GenerateDirection(List<Vector3> path, Vector3 pos, Vector3 dir)
-	{
-		if (path.Count < 2)
-		{
-			Debug.LogWarning("GenerateDirection called with path of length < 2", gameObject);
-			return Vector3.zero;
-		}
-
-		List<Vector3> possibleDirs = new List<Vector3>();
-		List<Vector3> priors = path.GetRange(path.Count - 2, 2);
-
-		if (ValidDistToEdge(pos, dir))
-		{
-			possibleDirs.Add(dir);
-		}
-
-		Vector3 left = rightTurn.FirstOrDefault(x => x.Value == dir).Key;
-		Vector3 right = rightTurn[dir];
-
-		if (ValidDistToEdge(pos, left) && !priors.Contains(right))
-		{
-			possibleDirs.Add(left);
-		}
-		if (ValidDistToEdge(pos, right) && !priors.Contains(left))
-		{
-			possibleDirs.Add(right);
-		}
-
-		return possibleDirs[Random.Range(0, possibleDirs.Count)];
-	}
-
-	private bool ValidDistToEdge(Vector3 pos, Vector3 dir)
-	{
-		Vector3 bounds = map.GetComponent<Renderer>().bounds.extents;
-		float dist = Mathf.Abs(Vector3.Dot(pos - map.position - bounds, dir));
-
-		return dist > minBlocksFromEdge * blockDist;
-	}
-*/
+	#endregion
 }

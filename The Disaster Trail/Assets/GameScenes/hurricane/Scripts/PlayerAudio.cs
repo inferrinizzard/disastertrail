@@ -6,7 +6,7 @@ public class PlayerAudio : MonoBehaviour
 	[SerializeField] [Range(0f, 1f)] private float volumeMultiplier;
 	[SerializeField] [Tooltip("Time to transition between volumes in seconds")] private float volumeChangeDuration;
 
-	private float previousDanger;
+	private DangerLevel previousDanger;
 
 	private PlayerTopDown player;
 	private IEnumerator transition;
@@ -14,7 +14,6 @@ public class PlayerAudio : MonoBehaviour
 	void Start()
 	{
 		player = GetComponent<PlayerTopDown>();
-		previousDanger = 0;
 
         // Start hurricane bgm
         SoundManager.instance.SwitchBGM(BackgroundMusic.HurricaneBGM);
@@ -33,12 +32,13 @@ public class PlayerAudio : MonoBehaviour
 		{
 			yield return new WaitForSeconds(delay);
 
-			float danger = player.GetDangerLevel();
+			DangerLevel danger = player.GetDangerLevel();
 
 			//transition to new audio volume
 			if (danger != previousDanger)
 			{
-				VolumeTransition(danger / player.GetMaxDanger() * volumeMultiplier, volumeChangeDuration);
+				VolumeTransition((int) danger * volumeMultiplier, volumeChangeDuration);
+				previousDanger = danger;
 			}
 		}
 	}

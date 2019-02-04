@@ -14,6 +14,11 @@ Shader "Custom/MobileTransparency1Side" {
 		Tags { "Queue" = "Transparent" "RenderType"="Transparent" }
 		LOD 1000
 
+		Pass {
+			Zwrite On
+			ColorMask 0
+		}
+
 		CGPROGRAM
 		// Physically based Standard lighting model, and enable shadows on all light types
 		#pragma surface surf Standard alpha:fade
@@ -28,7 +33,6 @@ Shader "Custom/MobileTransparency1Side" {
 
 		struct Input {
 			float2 uv_MainTex;
-			fixed facing : VFACE;
 		};
 
 		fixed4 _Color;

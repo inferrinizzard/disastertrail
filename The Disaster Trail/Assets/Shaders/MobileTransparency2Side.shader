@@ -8,13 +8,13 @@ Shader "Custom/MobileTransparency2Side" {
 		_EmissionColor ("EmissionColor", Color) = (1,1,1)
 		_MainTex ("Albedo (RGB)", 2D) = "white" {}
 		_EmissionTex ("Emission Texture", 2D) = "black" {}
+		_Opacity("Opacity", Range(0,1)) = 1
 	}
 	SubShader {
 		Tags { "Queue" = "Transparent" "RenderType"="Transparent" }
 		LOD 1000
 
 		Cull Off
-
 
 		CGPROGRAM
 		// Physically based Standard lighting model, and enable shadows on all light types
@@ -26,6 +26,7 @@ Shader "Custom/MobileTransparency2Side" {
 		sampler2D _MainTex;
 		sampler2D _EmissionTex;
 		sampler2D _AlphaTex;
+		float _Opacity;
 
 		struct Input {
 			float2 uv_MainTex;
@@ -52,7 +53,7 @@ Shader "Custom/MobileTransparency2Side" {
 			// Metallic and smoothness come from slider variables
 			//o.Metallic = _Metallic;
 			//o.Smoothness = _Glossiness;
-			o.Alpha = c.a;
+			o.Alpha = c.a * _Opacity;
 			if (IN.facing < 0.5)
 			{
 				o.Normal *= -1.0;
